@@ -1,45 +1,179 @@
-<!doctype html>
+<!DOCTYPE html>
 <html>
   <head>
-    <meta charset="utf-8">
+    <meta charset='utf-8'>
     <meta http-equiv="X-UA-Compatible" content="chrome=1">
-    <title>Docs by gankgu002</title>
-
-    <link rel="stylesheet" href="stylesheets/styles.css">
-    <link rel="stylesheet" href="stylesheets/pygment_trac.css">
-    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+    <link href='https://fonts.googleapis.com/css?family=Chivo:900' rel='stylesheet' type='text/css'>
+    <link rel="stylesheet" type="text/css" href="stylesheets/stylesheet.css" media="screen" />
+    <link rel="stylesheet" type="text/css" href="stylesheets/pygment_trac.css" media="screen" />
+    <link rel="stylesheet" type="text/css" href="stylesheets/print.css" media="print" />
     <!--[if lt IE 9]>
     <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
     <![endif]-->
+    <title>Docs by gankgu002</title>
   </head>
+
   <body>
-    <div class="wrapper">
-      <header>
-        <h1>Docs</h1>
-        <p>markdown documents</p>
+    <div id="container">
+      <div class="inner">
 
-        <p class="view"><a href="https://github.com/gankgu002/docs">View the Project on GitHub <small>gankgu002/docs</small></a></p>
+        <header>
+          <h1>Docs</h1>
+          <h2>markdown documents</h2>
+        </header>
 
+        <section id="downloads" class="clearfix">
+          <a href="https://github.com/gankgu002/docs/zipball/master" id="download-zip" class="button"><span>Download .zip</span></a>
+          <a href="https://github.com/gankgu002/docs/tarball/master" id="download-tar-gz" class="button"><span>Download .tar.gz</span></a>
+          <a href="https://github.com/gankgu002/docs" id="view-on-github" class="button"><span>View on GitHub</span></a>
+        </section>
 
-        <ul>
-          <li><a href="https://github.com/gankgu002/docs/zipball/master">Download <strong>ZIP File</strong></a></li>
-          <li><a href="https://github.com/gankgu002/docs/tarball/master">Download <strong>TAR Ball</strong></a></li>
-          <li><a href="https://github.com/gankgu002/docs">View On <strong>GitHub</strong></a></li>
-        </ul>
-      </header>
-      <section>
-        <h3>documentation of some linux services</h3>
+        <hr>
+
+        <section id="main_content">
+          <h3>documentation of some linux services</h3>
 
 <ul>
 <li>haproxy</li>
-</ul>
-      </section>
-      <footer>
-        <p>This project is maintained by <a href="https://github.com/gankgu002">gankgu002</a></p>
-        <p><small>Hosted on GitHub Pages &mdash; Theme by <a href="https://github.com/orderedlist">orderedlist</a></small></p>
-      </footer>
+</ul><hr><h1>How HAproxy helps improve mysql performance</h1>
+
+<h3>pre test: push to the limit</h3>
+
+<p>server1: mysql server
+ip: 192.168.1.246
+cpu: 1, ram: 1G</p>
+
+<p>server2: mysqlslap, haproxy
+ip: 192.168.1.247
+cpu: 1, ram: 1G</p>
+
+<ul>
+<li>first learn the limit of mysql server: (in real app, may test most time consuming or cpu consuming queries)</li>
+</ul><div class="highlight"><pre><span class="c">#- run mysqlslap tool at server2,192.168.1.247</span>
+<span class="c">#- concurrent level 220</span>
+<span class="c">#- iterations 5 : run 5 times and then calculate average.</span>
+<span class="c">#- number-of-queries 30000 : total queries in one test.</span>
+
+mysqlslap --create-schema<span class="o">=</span><span class="nb">test</span> --user<span class="o">=</span>root --password<span class="o">=</span>xxxxxxx <span class="se">\</span>
+-h 192.168.1.246 -P 3306 <span class="se">\</span>
+--query<span class="o">=</span><span class="s2">"select * from a;"</span> <span class="se">\</span>
+--concurrency<span class="o">=</span>220 --iterations<span class="o">=</span>5 <span class="se">\</span>
+--number-of-queries<span class="o">=</span>30000 
+
+Benchmark
+Average number of seconds to run all queries: 6.645 seconds
+Minimum number of seconds to run all queries: 6.568 seconds
+Maximum number of seconds to run all queries: 6.756 seconds
+Number of clients running queries: 220
+Average number of queries per client: 136
+
+<span class="c">#- change concurrent level to 240</span>
+Benchmark
+Average number of seconds to run all queries: 6.758 seconds
+Minimum number of seconds to run all queries: 6.650 seconds
+Maximum number of seconds to run all queries: 6.852 seconds
+Number of clients running queries: 240
+Average number of queries per client: 125
+
+<span class="c">#- increase concurrent level to 260</span>
+Average number of seconds to run all queries: 6.540 seconds
+Minimum number of seconds to run all queries: 6.418 seconds
+Maximum number of seconds to run all queries: 6.653 seconds
+Number of clients running queries: 260
+Average number of queries per client: 115
+
+<span class="c">#- increate concurrent level to 280; failed, hanged</span>
+</pre></div>
+
+<ul>
+<li>though concurrent=220 made system load more than 4.00, server2 survived until concurrent level &gt; 260</li>
+</ul><h2>Case 1: under high concurrent level</h2>
+
+<ul>
+<li>
+<p>in the last example, high concurrency cause some hanged queries in mysql server thus lead to low performance.</p>
+
+<p>("max_connections" system variable in mysql is not quit relevant to the concurrent level.)</p>
+</li>
+<li>
+<p>here comes haproxy to deal with this problem</p>
+
+<p>haproxy have a variable "maxconn" to limit concurrent connections passed to mysql</p>
+
+<p>lets say set maxconn=80, listen port 3308</p>
+
+<p>aggressively set concurrency=300</p>
+</li>
+</ul><div class="highlight"><pre><span class="c">#- run mysqlslap tool at server2,192.168.1.247</span>
+<span class="c">#- note that mysqlslap connected to 192.168.1.247:3308</span>
+
+mysqlslap --create-schema<span class="o">=</span><span class="nb">test</span> --user<span class="o">=</span>root --password<span class="o">=</span>xxxxxxx <span class="se">\</span>
+-h 192.168.1.247 -P 3308 <span class="se">\</span>
+--query<span class="o">=</span><span class="s2">"select * from a;"</span> <span class="se">\</span>
+--concurrency<span class="o">=</span>300 --iterations<span class="o">=</span>5 <span class="se">\</span>
+--number-of-queries<span class="o">=</span>30000 
+
+Benchmark
+Average number of seconds to run all queries: 5.559 seconds
+Minimum number of seconds to run all queries: 5.450 seconds
+Maximum number of seconds to run all queries: 5.735 seconds
+Number of clients running queries: 300
+Average number of queries per client: 100
+</pre></div>
+
+<ul>
+<li>
+<p>Oh, <strong>average 5.559 seconds</strong>. Quicker than concurrency=260 without HAproxy.</p>
+
+<p>HAproxy will certainly use cpu but that is another story.</p>
+</li>
+<li>
+<p>continuous tests:</p>
+
+<p>(seems like maxconn=80 is a better choice of haproxy setting for server1, poor testing machine)</p>
+</li>
+</ul><pre><code>#- change haproxy maxconn=100,120,140,180
+
+Benchmark
+Average number of seconds to run all queries: 5.872 seconds
+Minimum number of seconds to run all queries: 5.589 seconds
+Maximum number of seconds to run all queries: 6.564 seconds
+Number of clients running queries: 300
+Average number of queries per client: 100
+Benchmark
+Average number of seconds to run all queries: 5.737 seconds
+Minimum number of seconds to run all queries: 5.564 seconds
+Maximum number of seconds to run all queries: 6.057 seconds
+Number of clients running queries: 300
+Average number of queries per client: 100
+Benchmark
+Average number of seconds to run all queries: 6.103 seconds
+Minimum number of seconds to run all queries: 5.598 seconds
+Maximum number of seconds to run all queries: 7.573 seconds
+Number of clients running queries: 300
+Average number of queries per client: 100
+Benchmark
+Average number of seconds to run all queries: 10.770 seconds
+Minimum number of seconds to run all queries: 5.647 seconds
+Maximum number of seconds to run all queries: 18.041 seconds
+Number of clients running queries: 300
+Average number of queries per client: 100
+</code></pre>
+
+<ul>
+<li>ref</li>
+</ul><p><a href="http://docs.oracle.com/cd/E17952_01/refman-5.5-en/mysqlslap.html">http://docs.oracle.com/cd/E17952_01/refman-5.5-en/mysqlslap.html</a></p>
+
+<p><a href="http://flavio.tordini.org/a-more-stable-mysql-with-haprox">http://flavio.tordini.org/a-more-stable-mysql-with-haprox</a></p>
+        </section>
+
+        <footer>
+          Docs is maintained by <a href="https://github.com/gankgu002">gankgu002</a><br>
+          This page was generated by <a href="http://pages.github.com">GitHub Pages</a>. Tactile theme by <a href="http://twitter.com/jasonlong">Jason Long</a>.
+        </footer>
+
+        
+      </div>
     </div>
-    <script src="javascripts/scale.fix.js"></script>
-    
   </body>
 </html>
